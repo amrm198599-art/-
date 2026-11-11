@@ -1,0 +1,64 @@
+name: Build Sarei
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "sarei_flutter_v10.zip"
+      - ".github/workflows/build.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip project
+        run: unzip -q sarei_flutter_v10.zip
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Setup Android project and dependencies
+        working-directory: sarei_flutter
+        run: bash setup_android.sh
+
+      - name: Create signing config (if secrets exist)
+        working-directory: sarei_flutter
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > android/app/upload.jks
+            cat > android/key.properties <<EOF
+          storeFile=upload.jks
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          storePassword=$STORE_PASSWORD
+          EOF
+          fi
+
+      - name: Build APK
+        working-directory: sarei_flutter
+        run: flutter build apk --release
+
+      - name: Build AAB
+        working-directory: sarei_flutter
+        run: flutter build appbundle --release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sarei-release
+          path: |
+            sarei_flutter/build/app/outputs/flutter-apk/app-release.apk
+            sarei_flutter/build/app/outputs/bundle/release/app-release.aab
